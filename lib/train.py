@@ -30,16 +30,14 @@ class AverageMeter(object):
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
-def compute_loss(v_lens, labels):
-    labels=labels.float()
-    class_loss = (labels * (0.9 - v_lens).clamp(0).pow(2) + 0.5 * (1 - labels) * (v_lens - 0.1).clamp(0).pow(2)).mean()*100
+def compute_loss(output, target):
+    class_loss = (target * F.relu(0.9 - output)+ 0.5 * (1 - target) * F.relu(output - 0.1)).mean()
     return class_loss
 
-def compute_acc(predict,target):
-    max = torch.max(predict, 1, True)[0]
-    predict = predict == max
-    target.clamp_(0,1)
-    target=target.byte()
+def compute_acc(predict,target,vis):
+    predict[predict>=0.7]=1
+    predict[predict<=0.3]=0
+    vis.image(predict[0].cpu().float().numpy(), env='show',win='predict', opts=dict(title='predict'))
     predict = predict != target
     acc = torch.sum(predict).float() / torch.numel(target.data)
     return acc
@@ -51,29 +49,30 @@ def train_epoch(model, loader,optimizer, epoch, n_epochs, ):
     end = time.time()
     vis=visdom.Visdom()
     for batch_index,(data,target) in enumerate(loader):
-        vis.image(data[0].numpy(),env='test')
-        target[target>=1]=1
-        vis.image(target[0].float().numpy(),env='test')
+
 
         data = data.cuda()
-        target = target.long()
+        target[target >= 1] = 1
+        target = target.float()
         target = target.cuda()
         output = model(data)
-        predict = output.data
-        acc=compute_acc(predict,target)
 
         loss = compute_loss(output, target)
-        
+
         batch_size = target.size(0)
-        losses.update(loss.item(), batch_size)
+        losses.update(loss.data, batch_size)
+
         optimizer.zero_grad()
-        accs.update(acc)
         loss.backward()
+
         optimizer.step()
+        vis.image(data[0].cpu().numpy(), env='show', win='img', opts=dict(title='img'))
+        vis.image(target[0].cpu().float().numpy(), env='show', win='target', opts=dict(title='target'))
+        acc=compute_acc(output.detach(),target,vis)
+        accs.update(acc)
         batch_time.update(time.time() - end)
         end = time.time()
         res = '\t'.join([
-
             'Epoch: [%d/%d]' % (epoch + 1, n_epochs),
             'Batch: [%d/%d]' % (batch_index, len(loader)),
             'Time %.3f (%.3f)' % (batch_time.val, batch_time.avg),
@@ -92,19 +91,22 @@ def test_epoch(model,loader,epoch,n_epochs):
 
     # Model on eval mode
     model.eval()
+    vis = visdom.Visdom()
     with torch.no_grad():
         end = time.time()
         for batch_index,(data,target) in enumerate(loader):
-
             data = data.cuda()
-            target = target.long()
+            target[target >= 1] = 1
+            target = target.float()
             target = target.cuda()
             output = model(data)
-            predict = output.data
-            acc = compute_acc(predict,target)
             loss = compute_loss(output, target)
+
             batch_size = target.size(0)
             losses.update(loss.data, batch_size)
+            vis.image(data[0].cpu().numpy(), env='show', win='img', opts=dict(title='img'))
+            vis.image(target[0].cpu().float().numpy(), env='show', win='target', opts=dict(title='target'))
+            acc = compute_acc(output, target,vis)
             accs.update(acc)
             batch_time.update(time.time() - end)
             end = time.time()
@@ -158,7 +160,7 @@ def train(args, model,train_loader, decreasing_lr, wd=0.0001, momentum=0.9, ):
             print('best_loss'+str(best_train_loss))
             torch.save(model.state_dict(),args.params_name)
         print(train_loss)
-        train_loss_logger.log(epoch, train_loss)
+        train_loss_logger.log(epoch, 1-float(train_loss))
         train_acc_logger.log(epoch,1-float(train_acc))
         test_acc_logger.log(epoch,1-float(test_acc))
         test_loss_logger.log(epoch,float(test_loss))

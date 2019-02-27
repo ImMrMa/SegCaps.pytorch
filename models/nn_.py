@@ -69,7 +69,7 @@ class _ConvNd(Module):
 class Conv2d(_ConvNd):
 
     def __init__(self, in_channels, out_channels, kernel_size, stride=1,
-                 padding=0, dilation=1, groups=1, bias=True):
+                 padding=0, dilation=1, groups=1, bias=False):
         kernel_size = _pair(kernel_size)
         stride = _pair(stride)
         padding = _pair(padding)
@@ -86,7 +86,7 @@ class Conv2d(_ConvNd):
 class ConvTranspose2d(nn.ConvTranspose2d):
 
     def __init__(self, in_channels, out_channels, kernel_size, stride=1,
-                 padding=0, output_padding=0, groups=1, bias=True, dilation=1):
+                 padding=0, output_padding=0, groups=1, bias=False, dilation=1):
         super(ConvTranspose2d, self).__init__(
             in_channels, out_channels, kernel_size, stride, padding, output_padding, groups, bias, dilation)
 
